@@ -13,7 +13,7 @@ the hooks run) and `plugin/` (the packaging for each agent). To install and use 
 
 | Hook | What the plugin does | Mechanism it drives |
 |---|---|---|
-| `SessionStart` | Injects the repository's micro-skills (a cached render) as `additionalContext`, at a new start, and on a Copilot resume the text that session started with (§3); announces changed facts, tools the deny list newly left out, or, under `toolprune=propose` (or when `auto` could not write the file), a proposal still waiting, each in one `systemMessage` line; folds any earlier session whose end was never seen | microskills |
+| `SessionStart` | Injects the repository's micro-skills (a cached render) as `additionalContext`, at a new start, and on a Copilot resume the text that session started with (§3); announces changed facts, tools the deny list newly left out, or, under `toolprune=propose` (or when `auto` could not write the file), a proposal still waiting, each in one `systemMessage` line; folds any earlier session whose end was never seen; in a repository's first session on Claude Code, starts the backfill of its earlier sessions (§1a) | microskills |
 | `UserPromptSubmit` | Opens a prompt-turn for the loop guard | loopguard |
 | `PostToolUse` | Folds the call into the turn's guard; delivers a redirect as `additionalContext`, then, if the turn is still stuck, a one-line notice to the person (on Claude Code, also as context asking the model to repeat it); never stops the turn | loopguard |
 | `PostToolUseFailure` | The same, for a call that failed (Claude Code and Copilot report a failed call only here); the answer names this event, as Claude Code requires | loopguard |
@@ -46,6 +46,29 @@ re-tuned. Three things it adds:
 
 Every hook fails open: any error becomes an empty output (no change) and a traceback in
 `~/.tokeneconomizer/errors.log`. The hooks are stdlib only, and none waits on a model call.
+
+## 1a. Earlier sessions (`te backfill`, Claude Code)
+
+The plugin learns from a session when it ends, so it would start from nothing in a repository
+that has a long history. Claude Code keeps every session's log under
+`<config dir>/projects/<folder>/<session>.jsonl`, each entry carrying the session's `cwd`. The
+first SessionStart in a repository (no `backfill.json` yet) starts a detached `te backfill` over
+the `projects` folder that session's own log is in, and `te backfill` runs it by hand. It takes the
+repository's `backfill_sessions` (30) most recent sessions that have gone quiet, less the one that
+started it and any already folded or recorded, and learns from them oldest first:
+
+* each prompt-turn is replayed through `loopguard.TurnGuard` from the log (a failed call as
+  PostToolUseFailure's `error`, any other as PostToolUse's `tool_response`, the entry's
+  `toolUseResult`). A turn counts as stopped normally when the Stop hook's `stop_hook_summary`
+  or an `end_turn` message closes it with no tool call after, and no interrupt marker; the guard
+  is given no envelope, backstop or judge, so it records and decides nothing;
+* then `fold.fold_session`, with micro-skills limited to its free layer and `toolprune=auto`
+  read as `propose`; the ledger marks the record `backfilled`.
+
+What the history proposes for the deny list is kept as `untool.json`'s `from_history`: `auto`
+does not hold it as pending, the session start announces it as a proposal, and it waits for
+`toolprune apply`. A tool first proposed by a later, live session's fold follows `auto` as
+before.
 
 ## 2. What changes relative to the experimental setting
 

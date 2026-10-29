@@ -24,6 +24,9 @@
                                       now (runs by itself, once, after an upgrade)
     te repos merge KEY [INTO]         merge the state directory KEY into INTO (default: this
                                       repository's), for state whose checkouts are gone
+    te backfill [--dry-run] [--limit N]
+                                      learn from this repository's sessions from before the
+                                      plugin (Claude Code; the first session start runs it once)
     te doctor                         check the installation
     te --host copilot probe           real Copilot sessions in a throwaway repository: does a
                                       learned fact change what the model does, and what does the
@@ -326,6 +329,7 @@ def cmd_toolprune(args):
             return 1
         # Named by the person: no longer one they gave back, whatever `restore` said before.
         denylist.set_kept(ctx.store, ctx.repo.root, host, remove=tools)
+        _drop_from_history(ctx, tools)
         print(f"added: {', '.join(added) or '(already present)'}\n"
               f"in {denylist.settings_path(ctx.repo.root, host)} -- takes effect from the next "
               f"session.")
@@ -510,6 +514,42 @@ def cmd_fold(args):
         rec = fold.fold_session(ctx, sid)
         if rec is not None and args.verbose:
             print(json.dumps(rec, default=str))
+    return 0
+
+
+def _drop_from_history(ctx, tools):
+    """Applied by the person: no longer a history proposal waiting for them."""
+    with ctx.store.locked("mechanisms"):
+        unt = ctx.store.read("untool.json")
+        if isinstance(unt, dict) and unt.get("from_history"):
+            unt["from_history"] = [t for t in unt["from_history"] if t not in tools]
+            ctx.store.write("untool.json", unt)
+
+
+def cmd_backfill(args):
+    from . import backfill
+    if args.host != "claude":
+        print(f"backfill reads Claude Code's saved sessions; not available on {args.host}")
+        return 1
+    ctx = _ctx(args)
+    root = args.projects_dir or backfill.projects_dir(ctx.env)
+    res = backfill.run(ctx, root, limit=args.limit, exclude=args.exclude or (),
+                       dry_run=args.dry_run)
+    if not res["found"]:
+        print(f"{res['repo']}: nothing new to learn from in {root} (of the {res['limit']} most "
+              f"recent finished session(s), {res['already']} learned already)")
+        return 0
+    if args.dry_run:
+        print(f"{res['repo']}: would learn from {res['found']} earlier session(s) in {root} "
+              f"({res['already']} more learned already)")
+        return 0
+    print(f"{res['repo']}: learned from {res['learned']} earlier session(s); "
+          f"{res['green_turns']} turn(s) that ended on their own set the loop guard's envelope")
+    prop = res["proposal"]
+    if prop:
+        print(f"{len(prop)} tool(s) those sessions never used are waiting for you "
+              f"({', '.join(prop[:4])}{', ...' if len(prop) > 4 else ''}): `toolprune` lists "
+              f"them, and nothing changes until `toolprune apply`")
     return 0
 
 
@@ -739,6 +779,12 @@ def build_parser():
     p.add_argument("--session", required=True)
     p.add_argument("--job", required=True)
     p.set_defaults(fn=cmd_judge)
+    p = add("backfill")
+    p.add_argument("--projects-dir", default=None)
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--exclude", action="append")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_backfill)
     add("doctor").set_defaults(fn=cmd_doctor)
     p = add("repos")
     p.add_argument("action", nargs="?", default="list", choices=("list", "migrate", "merge"))
