@@ -338,6 +338,15 @@ applied to the ones that follow. Facts and the deny list take effect when a sess
 loop guard acts during a turn. Each agent learns on its own (what Claude Code learned in a
 repository is not used by Codex there), while settings are shared by every agent.
 
+- **Earlier sessions** (Claude Code). The first session in a repository after you install the
+  plugin also reads up to `backfill_sessions` (30) of the repository's sessions from before it,
+  the most recent ones Claude Code saved under `~/.claude/projects`, in the background, and says
+  so once. They go through what a finished session goes through, and their turns that ended on
+  their own set the loop guard's usual turn length. No model is called for them: facts come from
+  the free layer only. Tools that only those sessions show unused are proposed, not removed, even
+  under `toolprune=auto`; nothing changes until you run `toolprune apply`. `backfill` runs it by
+  hand (`--dry-run` shows what it would read), and a session already learned is never read twice.
+
 - **Facts** (once you turn micro-skills on; it is off by default). Two sources propose them, in
   any language or toolchain. The first needs no model call: the same environment failure in a few
   sessions (a tool, interpreter, build or test command that fails as typed and works spelled
@@ -401,6 +410,7 @@ repository is not used by Codex there), while settings are shared by every agent
 | `repos` | every repository it keeps state for: how it was identified, its sessions per agent, the checkouts seen |
 | `repos migrate` | file state an earlier version recorded under the repository it belongs to (runs by itself, once, after an upgrade) |
 | `repos merge KEY [INTO]` | merge one repository's state into another's (default: this one), for state whose checkouts are gone |
+| `backfill [--dry-run] [--limit N]` | learn from this repository's Claude Code sessions from before the plugin (the first session start runs it once) |
 | `doctor` | check Python, the state directory, the agents found, how this directory was identified, and the error log |
 
 How to run them:
@@ -474,6 +484,7 @@ and are shared by every agent working in it. The examples use Claude Code's form
 | `toolprune_sessions` | `5` | or this many sessions, however few prompts they ran |
 | `toolprune_quiet_minutes` | `60` | how long the repository's sessions must have been idle before `auto` writes a deny list, so that no conversation resumed while its prompt cache is warm loses it (a list is written at the latest a day after it formed); `0` writes at once |
 | `toolprune_protect` | none | tools never left out however long they go unused, by name or pattern (`mcp__headroom__*`), separated by commas; a deny rule the plugin added for one is removed at the next fold, and rules you wrote are never touched |
+| `backfill_sessions` | `30` | how many of a repository's most recent earlier Claude Code sessions `backfill` reads; `0` reads none |
 | `loopguard_aggr` | `default` | the guard's threshold preset: `conservative`, `default` or `aggressive` |
 | `loopguard_nudges` | `1` | redirects per turn before the guard only tells you |
 | `loopguard.<name>` | from the preset | one guard threshold, set by hand (below) |

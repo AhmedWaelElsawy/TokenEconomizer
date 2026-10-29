@@ -24,7 +24,7 @@ import os
 import time
 
 from .. import loopguard
-from . import denylist, fold, repomap, repos, sidecall
+from . import backfill, denylist, fold, repomap, repos, sidecall
 from .hosts import merge_outputs
 from .paths import ensure_launcher
 
@@ -163,6 +163,14 @@ class LiveController:
                                                 "SessionStart", "cached"))
                 s["repomap_done"] = True
 
+        transcript = self.host.transcript(self.p)
+        if backfill.should_start(self.ctx, transcript):
+            # The repository's first session with the plugin: learn from the ones before it.
+            outputs.append(self.host.notice(
+                f"TokenEconomizer: learning from up to {self.cfg.backfill_sessions} earlier "
+                f"session(s) in {self.ctx.repo.label}, in the background."))
+            backfill.start(self.ctx, transcript, self.sid)
+
         if seen != seen_before:
             self.store.write("notices.json", seen)
         self._save(s)
@@ -203,8 +211,10 @@ class LiveController:
         refused = unt.get("auto_apply_refused") if self.cfg.toolprune == "auto" else None
         # Under `auto`, a list waiting for the repository to go quiet is no news yet: the
         # session start after it is written says so (above). Only a refusal is.
+        # Except what the sessions before the plugin proposed: that waits for the person.
         if self.cfg.toolprune == "auto" and not refused:
-            prop = []
+            hist = set(unt.get("from_history") or [])
+            prop = [t for t in prop if t in hist]
         if prop and seen.get("untool") != ",".join(prop):
             out.append(self.host.notice(
                 f"TokenEconomizer: {len(prop)} {unit}(s) went unused in this repository's recent "
