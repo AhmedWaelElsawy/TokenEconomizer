@@ -184,8 +184,6 @@ def _fold_toolprune(ctx, adapter, run_dir, session_id, transcript=None, workdir=
         proposal = [t for t in raw if t not in applied and t not in kept]
     doc["proposal"] = proposal
     doc["new_in_proposal"] = sorted(set(proposal) - set(st.get("proposal", [])))
-    if st.get("from_history"):
-        doc["from_history"] = [t for t in st["from_history"] if t in proposal]
     if ctx.config.toolprune == "auto" and proposal and not ctx.config.shadow:
         _hold(doc, st, proposal, ctx.repo.root)
     if restored:
@@ -272,8 +270,6 @@ def _fold_toolprune_codex(ctx, adapter, session_id, transcript, workdir, prompts
            "loaded_prompts": loaded_prompts,
            "proposal": proposal, "updated": time.time(),
            "new_in_proposal": sorted(set(proposal) - set(prior.get("proposal", [])))}
-    if prior.get("from_history"):
-        doc["from_history"] = [c for c in prior["from_history"] if c in proposal]
     if ctx.config.toolprune == "auto" and proposal and not ctx.config.shadow:
         _hold(doc, prior, proposal, ctx.repo.root)
     ctx.store.write("untool.json", doc)
@@ -283,13 +279,7 @@ def _fold_toolprune_codex(ctx, adapter, session_id, transcript, workdir, prompts
 
 def _hold(doc, prior, proposal, root):
     """`auto`: keep the proposal as pending for `apply_pending`, from when it first waited. A
-    refusal to write the file (a committed or unparseable one) stands until a write succeeds.
-    What the sessions before the plugin proposed (`from_history`, see `backfill`) is not held:
-    it waits for `toolprune apply`."""
-    hist = set(doc.get("from_history") or [])
-    proposal = [t for t in proposal if t not in hist]
-    if not proposal:
-        return
+    refusal to write the file (a committed or unparseable one) stands until a write succeeds."""
     pend = prior.get("auto_pending") or {}
     doc["auto_pending"] = {"items": list(proposal), "root": root,
                            "since": pend.get("since") or time.time()}

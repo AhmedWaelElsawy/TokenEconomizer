@@ -9,4 +9,4 @@ Run this exact command with the Bash tool, then show me its output verbatim in a
 te="${CLAUDE_PLUGIN_ROOT}/scripts/te"; [ -x "$te" ] || te="${TOKENECONOMIZER_HOME:-$HOME/.tokeneconomizer}/bin/te"; "$te" --host claude --cwd "$(pwd)" backfill $ARGUMENTS
 ```
 
-Never add `--limit` or remove `--dry-run` yourself. If it lists tools waiting, say in one sentence that nothing changes until I run `/tokeneconomizer:toolprune apply`.
+Never add `--limit` or remove `--dry-run` yourself. If it lists tools left out, say in one sentence that `/tokeneconomizer:toolprune restore` gives them back.

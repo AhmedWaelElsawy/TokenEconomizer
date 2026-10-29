@@ -13,9 +13,9 @@ Three differences from a live session, all on purpose:
 
   * No model is called: micro-skills runs its free layer only, and the replayed guard has no
     judge and no envelope to act on (it records, it decides nothing).
-  * Tools the history alone shows unused are only proposed (`untool.json`'s `from_history`),
-    even under `toolprune=auto`: they wait for `toolprune apply`, as a deny list nobody watched
-    form should.
+  * The deny list is formed once, after the last session, not after each: each fold proposes
+    only, and under `toolprune=auto` the final proposal is held and written as a live fold's is
+    (`fold.schedule_pending`: once the repository's sessions have been quiet).
   * A session already learned (folded, or recorded by the hooks), one still being written, and
     the session that started the backfill are left alone, so nothing is counted twice.
 
@@ -248,16 +248,21 @@ def candidates(ctx, items, limit, exclude=(), now=None):
     return new, len(recent) - len(new)
 
 
-def _mark_from_history(ctx):
-    """Tools the history proposed wait for the person, even under `auto` (`fold._hold`)."""
+def _hold_proposal(ctx):
+    """Under `auto`, hold what the history proposed for `fold.apply_pending`, as a live fold
+    does. Returns (proposal, held)."""
     with ctx.store.locked("mechanisms"):
         unt = ctx.store.read("untool.json")
-        if not isinstance(unt, dict):
-            return []
-        prop = list(unt.get("proposal") or [])
-        unt["from_history"] = sorted(set(unt.get("from_history") or []) | set(prop))
-        ctx.store.write("untool.json", unt)
-        return unt["from_history"]
+        if not isinstance(unt, dict) or not unt.get("proposal"):
+            return [], False
+        prop = list(unt["proposal"])
+        held = ctx.config.toolprune == "auto" and not ctx.config.shadow
+        if held:
+            fold._hold(unt, unt, prop, ctx.repo.root)
+            ctx.store.write("untool.json", unt)
+    if held:
+        fold.schedule_pending(ctx)
+    return prop, held
 
 
 def run(ctx, root, limit=None, exclude=(), dry_run=False):
@@ -266,7 +271,7 @@ def run(ctx, root, limit=None, exclude=(), dry_run=False):
     limit = ctx.config.backfill_sessions if limit is None else limit
     new, known = candidates(ctx, history(root), limit, exclude)
     summary = {"repo": ctx.repo.label, "limit": limit, "found": len(new),
-               "already": known, "learned": 0}
+               "already": known, "learned": 0, "pending": False}
     if dry_run:
         return summary
     for item in new:
@@ -277,7 +282,8 @@ def run(ctx, root, limit=None, exclude=(), dry_run=False):
     tracker = loopguard.load_envelope(ctx.store, level=ctx.config.loopguard_aggr,
                                       overrides=ctx.config.loopguard_thresholds)
     summary["green_turns"] = len(tracker.resolved_turns)
-    summary["proposal"] = _mark_from_history(ctx) if summary["learned"] else []
+    summary["proposal"], summary["pending"] = (_hold_proposal(ctx) if summary["learned"]
+                                               else ([], False))
     prior = ctx.store.read(MARKER) or {}
     ctx.store.write(MARKER, dict(prior, at=time.time(), limit=limit,
                                  sessions=int(prior.get("sessions", 0)) + summary["learned"]))
