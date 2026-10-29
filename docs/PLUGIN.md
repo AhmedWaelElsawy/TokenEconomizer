@@ -65,10 +65,10 @@ started it and any already folded or recorded, and learns from them oldest first
 * then `fold.fold_session`, with micro-skills limited to its free layer and `toolprune=auto`
   read as `propose`; the ledger marks the record `backfilled`.
 
-What the history proposes for the deny list is kept as `untool.json`'s `from_history`: `auto`
-does not hold it as pending, the session start announces it as a proposal, and it waits for
-`toolprune apply`. A tool first proposed by a later, live session's fold follows `auto` as
-before.
+The deny list is formed once, after the last session: under `toolprune=auto` that proposal is
+held and written as a live fold's is, once the repository's sessions have been quiet for
+`toolprune_quiet_minutes` (so a conversation resumed meanwhile keeps its prompt cache), and the
+next session start says so; under `propose` it waits for `toolprune apply`.
 
 ## 2. What changes relative to the experimental setting
 

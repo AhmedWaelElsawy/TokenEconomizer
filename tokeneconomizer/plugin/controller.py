@@ -211,10 +211,8 @@ class LiveController:
         refused = unt.get("auto_apply_refused") if self.cfg.toolprune == "auto" else None
         # Under `auto`, a list waiting for the repository to go quiet is no news yet: the
         # session start after it is written says so (above). Only a refusal is.
-        # Except what the sessions before the plugin proposed: that waits for the person.
         if self.cfg.toolprune == "auto" and not refused:
-            hist = set(unt.get("from_history") or [])
-            prop = [t for t in prop if t in hist]
+            prop = []
         if prop and seen.get("untool") != ",".join(prop):
             out.append(self.host.notice(
                 f"TokenEconomizer: {len(prop)} {unit}(s) went unused in this repository's recent "

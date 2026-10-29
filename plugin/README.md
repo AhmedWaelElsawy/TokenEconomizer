@@ -343,8 +343,8 @@ repository is not used by Codex there), while settings are shared by every agent
   the most recent ones Claude Code saved under `~/.claude/projects`, in the background, and says
   so once. They go through what a finished session goes through, and their turns that ended on
   their own set the loop guard's usual turn length. No model is called for them: facts come from
-  the free layer only. Tools that only those sessions show unused are proposed, not removed, even
-  under `toolprune=auto`; nothing changes until you run `toolprune apply`. `backfill` runs it by
+  the free layer only. Tools those sessions never used are left out as described under
+  **Deny list** below (with `toolprune=propose`, only proposed). `backfill` runs it by
   hand (`--dry-run` shows what it would read), and a session already learned is never read twice.
 
 - **Facts** (once you turn micro-skills on; it is off by default). Two sources propose them, in

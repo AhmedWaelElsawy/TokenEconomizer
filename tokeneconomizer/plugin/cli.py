@@ -329,7 +329,6 @@ def cmd_toolprune(args):
             return 1
         # Named by the person: no longer one they gave back, whatever `restore` said before.
         denylist.set_kept(ctx.store, ctx.repo.root, host, remove=tools)
-        _drop_from_history(ctx, tools)
         print(f"added: {', '.join(added) or '(already present)'}\n"
               f"in {denylist.settings_path(ctx.repo.root, host)} -- takes effect from the next "
               f"session.")
@@ -517,15 +516,6 @@ def cmd_fold(args):
     return 0
 
 
-def _drop_from_history(ctx, tools):
-    """Applied by the person: no longer a history proposal waiting for them."""
-    with ctx.store.locked("mechanisms"):
-        unt = ctx.store.read("untool.json")
-        if isinstance(unt, dict) and unt.get("from_history"):
-            unt["from_history"] = [t for t in unt["from_history"] if t not in tools]
-            ctx.store.write("untool.json", unt)
-
-
 def cmd_backfill(args):
     from . import backfill
     if args.host != "claude":
@@ -547,9 +537,12 @@ def cmd_backfill(args):
           f"{res['green_turns']} turn(s) that ended on their own set the loop guard's envelope")
     prop = res["proposal"]
     if prop:
-        print(f"{len(prop)} tool(s) those sessions never used are waiting for you "
-              f"({', '.join(prop[:4])}{', ...' if len(prop) > 4 else ''}): `toolprune` lists "
-              f"them, and nothing changes until `toolprune apply`")
+        how = ("left out of this repository's sessions once they have been idle for "
+               f"toolprune_quiet_minutes ({ctx.config.toolprune_quiet_minutes}); `toolprune "
+               "restore` gives them back" if res["pending"] else
+               "nothing changes until `toolprune apply`")
+        print(f"{len(prop)} tool(s) those sessions never used ({', '.join(prop[:4])}"
+              f"{', ...' if len(prop) > 4 else ''}): {how}; `toolprune` lists them")
     return 0
 
 

@@ -171,35 +171,39 @@ def test_a_dry_run_reports_and_writes_nothing(env, repo, projects, monkeypatch, 
         store_for(env, repo).read("folded.json") is None
 
 
-def test_tools_history_leaves_unused_are_only_suggested(env, repo, projects, tmp_path,
-                                                         monkeypatch):
-    """Under the default `auto`, tools the history alone shows unused wait for the person:
-    nothing is written to the settings file, the next session start says so, and a later live
-    fold does not write them either. `toolprune apply` does."""
+def _unused_history(env, repo, projects):
     _catalog(env, ["Bash", "Read", "Edit", "Workflow", "CronCreate"])
     for i in range(6):
         history_session(projects, repo, f"h{i}", [green(prompt=f"p{i}"), green(prompt="more")],
                         age_h=i)
+
+
+def test_tools_history_leaves_unused_are_left_out_under_auto(env, repo, projects, tmp_path,
+                                                             monkeypatch, capsys):
+    """Under the default `auto`, the history's deny list is written as a live fold's is (here
+    at once: `toolprune_quiet_minutes=0`), the next session start says so, and `restore`
+    gives the tools back."""
+    _unused_history(env, repo, projects)
     assert run(env, monkeypatch, "--cwd", repo, "backfill", "--projects-dir", projects) == 0
-    st = store_for(env, repo)
-    unt = st.read("untool.json")
-    assert sorted(unt["from_history"]) == ["CronCreate", "Workflow"]
-    assert not unt.get("auto_pending")
-    assert not os.path.exists(denylist.settings_path(repo))
-    # A live session after the backfill, that also left those tools unused.
-    t = history_session(projects, repo, "live", [green(), green(prompt="more")], age_h=9)
-    notice = call(env, {"hook_event_name": "SessionStart", "session_id": "live",
-                        "source": "startup", "transcript_path": t, "cwd": repo})["systemMessage"]
-    assert "2 tool(s) went unused" in notice
-    assert "nothing changes until you run `/tokeneconomizer:toolprune apply`" in notice
-    call(env, {"hook_event_name": "SessionEnd", "session_id": "live", "transcript_path": t,
-               "cwd": repo, "reason": "other"})
-    assert not os.path.exists(denylist.settings_path(repo))         # a live fold waits too
-    assert sorted(st.read("untool.json")["from_history"]) == ["CronCreate", "Workflow"]
-    assert run(env, monkeypatch, "--cwd", repo, "toolprune", "apply") == 0
+    assert "toolprune restore` gives them back" in capsys.readouterr().out
     deny = json.load(open(denylist.settings_path(repo)))["permissions"]["deny"]
     assert sorted(deny) == ["CronCreate", "Workflow"]
-    assert st.read("untool.json").get("from_history") in (None, [])
+    t = history_session(projects, repo, "live", [green()], age_h=9)
+    notice = call(env, {"hook_event_name": "SessionStart", "session_id": "live",
+                        "source": "startup", "transcript_path": t, "cwd": repo})["systemMessage"]
+    assert "removed 2 tool(s) this repository's sessions never used" in notice
+    assert run(env, monkeypatch, "--cwd", repo, "toolprune", "restore") == 0
+    assert json.load(open(denylist.settings_path(repo))).get("permissions", {}).get("deny") in (
+        None, [])
+
+
+def test_with_propose_the_historys_tools_are_only_proposed(env, repo, projects, monkeypatch):
+    env = dict(env, TE_TOOLPRUNE="propose")
+    _unused_history(env, repo, projects)
+    assert run(env, monkeypatch, "--cwd", repo, "backfill", "--projects-dir", projects) == 0
+    assert sorted(store_for(env, repo).read("untool.json")["proposal"]) == ["CronCreate",
+                                                                           "Workflow"]
+    assert not os.path.exists(denylist.settings_path(repo))
 
 
 def _start(env, sid, transcript, repo):
